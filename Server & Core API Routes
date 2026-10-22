@@ -1,0 +1,265 @@
+const express = require('express');
+const mysql = require('mysql2/promise');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+require('dotenv').config();
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+// Database Connection Pool
+const db = mysql.createPool({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'visitor_management_db'
+});
+
+const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_key';
+
+// Middleware: Authenticate JWT Token & Check Roles
+const authenticateToken = (requiredRole = null) => {
+    return (req, res, next) => {
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+        if (!token) return res.status(401).json({ message: 'Access Token Required' });
+
+        jwt.verify(token, JWT_SECRET, (err, user) => {
+            if (err) return res.status(403).json({ message: 'Invalid or Expired Token' });
+            if (requiredRole && user.role !== requiredRole) {
+                return res.status(403).json({ message: 'Unauthorized Access' });
+            }
+            req.user = user;
+            next();
+        });
+    };
+};
+
+// ------------------- AUTHENTICATION ROUTES -------------------
+
+// Log In Endpoint
+app.post('/api/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const [rows] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
+        if (rows.length === 0) return res.status(400).json({ message: 'User not found' });
+
+        const user = rows[0];
+        const validPassword = await bcrypt.compare(password, user.password_hash);
+        if (!validPassword) return res.status(400).json({ message: 'Invalid Credentials' });
+
+        const token = jwt.sign({ userId: user.user_id, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
+        res.json({ token, role: user.role, userId: user.user_id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ------------------- VISITOR SERVICE ROUTES -------------------
+
+// Step 4.1 Check-In Sequence Implementation
+app.post('/api/visitors/check-in', authenticateToken('GUARD'), async (req, res) => {
+    const { fullName, phoneNumber, idNumber, vehicleNo, apartmentId, residentId } = req.body;
+    const guardUserId = req.user.userId;
+
+    try {
+        // Step 2 & 3: Find or Create Visitor Record
+        let [visitors] = await db.query('SELECT visitor_id FROM visitors WHERE id_number = ?', [idNumber]);
+        let visitorId;
+
+        if (visitors.length > 0) {
+            visitorId = visitors[0].visitor_id;
+        } else {
+            const [result] = await db.query(
+                'INSERT INTO visitors (full_name, phone_number, id_number, vehicle_no) VALUES (?, ?, ?, ?)',
+                [fullName, phoneNumber, idNumber, vehicleNo]
+            );
+            visitorId = result.insertId;
+        }
+
+        // Step 4 & 5: INSERT VisitLog (Status = 'ONGOING')
+        const [logResult] = await db.query(
+            `INSERT INTO visit_logs (visitor_id, apartment_id, resident_id, guard_user_id, status) 
+             VALUES (?, ?, ?, ?, 'ONGOING')`,
+            [visitorId, apartmentId, residentId, guardUserId]
+        );
+
+        res.status(201).json({ message: 'Visitor Checked In Successfully', visitId: logResult.insertId });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Step 4.2 Check-Out Sequence Implementation
+app.put('/api/visitors/check-out/:visitId', authenticateToken('GUARD'), async (req, res) => {
+    const { visitId } = req.params;
+    try {
+        // UPDATE VisitLog (Set Exit Timestamp & Status = 'COMPLETED')
+        await db.query(
+            `UPDATE visit_logs 
+             SET exit_timestamp = NOW(), status = 'COMPLETED' 
+             WHERE visit_id = ? AND status = 'ONGOING'`,
+            [visitId]
+        );
+        res.json({ message: 'Visitor Checked Out Successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get Active On-Site Visitors
+app.get('/api/visitors/active', authenticateToken('GUARD'), async (req, res) => {
+    try {
+        const [rows] = await db.query(
+            `SELECT vl.visit_id, v.full_name AS visitor_name, v.phone_number, 
+                    CONCAT('Block ', a.block_number, ' - Unit ', a.unit_number) AS unit,
+                    r.name AS resident_name, vl.entry_timestamp
+             FROM visit_logs vl
+             JOIN visitors v ON vl.visitor_id = v.visitor_id
+             JOIN apartments a ON vl.apartment_id = a.apartment_id
+             JOIN residents r ON vl.resident_id = r.resident_id
+             WHERE vl.status = 'ONGOING'`
+        );
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Start Server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));const express = require('express');
+const mysql = require('mysql2/promise');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+require('dotenv').config();
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+// Database Connection Pool
+const db = mysql.createPool({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'visitor_management_db'
+});
+
+const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_key';
+
+// Middleware: Authenticate JWT Token & Check Roles
+const authenticateToken = (requiredRole = null) => {
+    return (req, res, next) => {
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+        if (!token) return res.status(401).json({ message: 'Access Token Required' });
+
+        jwt.verify(token, JWT_SECRET, (err, user) => {
+            if (err) return res.status(403).json({ message: 'Invalid or Expired Token' });
+            if (requiredRole && user.role !== requiredRole) {
+                return res.status(403).json({ message: 'Unauthorized Access' });
+            }
+            req.user = user;
+            next();
+        });
+    };
+};
+
+// ------------------- AUTHENTICATION ROUTES -------------------
+
+// Log In Endpoint
+app.post('/api/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const [rows] = await db.query('SELECT * FROM users WHERE username = ?', [username]);
+        if (rows.length === 0) return res.status(400).json({ message: 'User not found' });
+
+        const user = rows[0];
+        const validPassword = await bcrypt.compare(password, user.password_hash);
+        if (!validPassword) return res.status(400).json({ message: 'Invalid Credentials' });
+
+        const token = jwt.sign({ userId: user.user_id, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
+        res.json({ token, role: user.role, userId: user.user_id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ------------------- VISITOR SERVICE ROUTES -------------------
+
+// Step 4.1 Check-In Sequence Implementation
+app.post('/api/visitors/check-in', authenticateToken('GUARD'), async (req, res) => {
+    const { fullName, phoneNumber, idNumber, vehicleNo, apartmentId, residentId } = req.body;
+    const guardUserId = req.user.userId;
+
+    try {
+        // Step 2 & 3: Find or Create Visitor Record
+        let [visitors] = await db.query('SELECT visitor_id FROM visitors WHERE id_number = ?', [idNumber]);
+        let visitorId;
+
+        if (visitors.length > 0) {
+            visitorId = visitors[0].visitor_id;
+        } else {
+            const [result] = await db.query(
+                'INSERT INTO visitors (full_name, phone_number, id_number, vehicle_no) VALUES (?, ?, ?, ?)',
+                [fullName, phoneNumber, idNumber, vehicleNo]
+            );
+            visitorId = result.insertId;
+        }
+
+        // Step 4 & 5: INSERT VisitLog (Status = 'ONGOING')
+        const [logResult] = await db.query(
+            `INSERT INTO visit_logs (visitor_id, apartment_id, resident_id, guard_user_id, status) 
+             VALUES (?, ?, ?, ?, 'ONGOING')`,
+            [visitorId, apartmentId, residentId, guardUserId]
+        );
+
+        res.status(201).json({ message: 'Visitor Checked In Successfully', visitId: logResult.insertId });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Step 4.2 Check-Out Sequence Implementation
+app.put('/api/visitors/check-out/:visitId', authenticateToken('GUARD'), async (req, res) => {
+    const { visitId } = req.params;
+    try {
+        // UPDATE VisitLog (Set Exit Timestamp & Status = 'COMPLETED')
+        await db.query(
+            `UPDATE visit_logs 
+             SET exit_timestamp = NOW(), status = 'COMPLETED' 
+             WHERE visit_id = ? AND status = 'ONGOING'`,
+            [visitId]
+        );
+        res.json({ message: 'Visitor Checked Out Successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get Active On-Site Visitors
+app.get('/api/visitors/active', authenticateToken('GUARD'), async (req, res) => {
+    try {
+        const [rows] = await db.query(
+            `SELECT vl.visit_id, v.full_name AS visitor_name, v.phone_number, 
+                    CONCAT('Block ', a.block_number, ' - Unit ', a.unit_number) AS unit,
+                    r.name AS resident_name, vl.entry_timestamp
+             FROM visit_logs vl
+             JOIN visitors v ON vl.visitor_id = v.visitor_id
+             JOIN apartments a ON vl.apartment_id = a.apartment_id
+             JOIN residents r ON vl.resident_id = r.resident_id
+             WHERE vl.status = 'ONGOING'`
+        );
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Start Server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
