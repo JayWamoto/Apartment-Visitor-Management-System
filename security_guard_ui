@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Guard Dashboard - Visitor Management</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #121212; color: #fff; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 8px; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        input, select { width: 100%; padding: 10px; background: #2b2b2b; color: #fff; border: 1px solid #444; border-radius: 4px; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #444; padding: 10px; text-align: left; }
+        th { background: #2b2b2b; }
+        .btn-checkout { background: #d9534f; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>NEW VISITOR ENTRY</h2>
+    <form id="checkInForm">
+        <div class="form-grid">
+            <input type="text" id="fullName" placeholder="Full Name" required />
+            <input type="text" id="idNumber" placeholder="National/ID No" required />
+            <input type="text" id="phoneNumber" placeholder="Phone Number" required />
+            <input type="text" id="vehicleNo" placeholder="Vehicle Reg (Optional)" />
+            <input type="number" id="apartmentId" placeholder="Apartment ID" required />
+            <input type="number" id="residentId" placeholder="Resident ID" required />
+        </div>
+        <button type="submit">CHECK-IN VISITOR</button>
+    </form>
+
+    <h2>ON-SITE VISITORS (ONGOING)</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Visitor Name</th>
+                <th>Phone</th>
+                <th>Unit</th>
+                <th>Resident</th>
+                <th>Entry Time</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="activeVisitorsTable"></tbody>
+    </table>
+</div>
+
+<script>
+const TOKEN = localStorage.getItem('token'); // Retrieved on login
+
+async function loadActiveVisitors() {
+    const res = await fetch('/api/visitors/active', {
+        headers: { 'Authorization': `Bearer ${TOKEN}` }
+    });
+    const visitors = await res.json();
+    const tbody = document.getElementById('activeVisitorsTable');
+    tbody.innerHTML = '';
+
+    visitors.forEach(v => {
+        tbody.innerHTML += `
+            <tr>
+                <td>${v.visitor_name}</td>
+                <td>${v.phone_number}</td>
+                <td>${v.unit}</td>
+                <td>${v.resident_name}</td>
+                <td>${new Date(v.entry_timestamp).toLocaleTimeString()}</td>
+                <td><button class="btn-checkout" onclick="checkOut(${v.visit_id})">CHECK-OUT</button></td>
+            </tr>`;
+    });
+}
+
+document.getElementById('checkInForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = {
+        fullName: document.getElementById('fullName').value,
+        idNumber: document.getElementById('idNumber').value,
+        phoneNumber: document.getElementById('phoneNumber').value,
+        vehicleNo: document.getElementById('vehicleNo').value,
+        apartmentId: parseInt(document.getElementById('apartmentId').value),
+        residentId: parseInt(document.getElementById('residentId').value)
+    };
+
+    const res = await fetch('/api/visitors/check-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+        body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+        alert('Visitor checked in successfully');
+        loadActiveVisitors();
+    }
+});
+
+async function checkOut(visitId) {
+    const res = await fetch(`/api/visitors/check-out/${visitId}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${TOKEN}` }
+    });
+    if (res.ok) {
+        loadActiveVisitors();
+    }
+}
+
+// Initial load
+loadActiveVisitors();
+</script>
+
+</body>
+</html>
