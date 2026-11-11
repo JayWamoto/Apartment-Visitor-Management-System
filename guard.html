@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Guard Dashboard - Visitor Management System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #121212; color: #e0e0e0; }
+        .card { background-color: #1e1e1e; border: 1px solid #333; }
+        .form-control, .form-select { background-color: #2b2b2b; color: #fff; border: 1px solid #444; }
+        .form-control:focus, .form-select:focus { background-color: #333; color: #fff; }
+        .table-dark { background-color: #1e1e1e; }
+    </style>
+</head>
+<body class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>APARTMENT VISITOR MANAGEMENT SYSTEM</h2>
+        <div>
+            Logged in: <strong id="user-display">Guard_01</strong>
+            <button onclick="logout()" class="btn btn-sm btn-outline-light ms-2">Logout</button>
+        </div>
+    </div>
+
+    <!-- Quick Check-In Form (Wireframe 6.1) -->
+    <div class="card p-4 mb-4">
+        <h5 class="text-primary mb-3">NEW VISITOR ENTRY</h5>
+        <form id="checkinForm" class="row g-3">
+            <div class="col-md-6">
+                <label>Full Name</label>
+                <input type="text" id="fullName" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+                <label>National ID No</label>
+                <input type="text" id="idNumber" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+                <label>Phone Number</label>
+                <input type="text" id="phone" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+                <label>Vehicle Reg (Optional)</label>
+                <input type="text" id="vehicle" class="form-control">
+            </div>
+            <div class="col-md-6">
+                <label>Target Resident</label>
+                <select id="residentSelect" class="form-select" required></select>
+            </div>
+            <div class="col-12 text-end">
+                <button type="submit" class="btn btn-primary px-4">CHECK-IN VISITOR</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- On-Site Active Visitors (Wireframe 6.1) -->
+    <div class="card p-4">
+        <h5 class="text-primary mb-3">ON-SITE VISITORS (ONGOING)</h5>
+        <table class="table table-dark table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Visitor Name</th>
+                    <th>Phone</th>
+                    <th>Unit</th>
+                    <th>Resident</th>
+                    <th>Entry Time</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="activeVisitorsTable"></tbody>
+        </table>
+    </div>
+
+    <script>
+        async function init() {
+            // Load Residents for dropdown
+            const res = await fetch('/api/admin/residents');
+            const residents = await res.json();
+            const select = document.getElementById('residentSelect');
+            select.innerHTML = residents.map(r => `<option value="${r.resident_id}">${r.unit} - ${r.name}</option>`).join('');
+            loadActiveVisitors();
+        }
+
+        async function loadActiveVisitors() {
+            const res = await fetch('/api/visits/active');
+            const data = await res.json();
+            const tbody = document.getElementById('activeVisitorsTable');
+            tbody.innerHTML = data.map(v => `
+                <tr>
+                    <td>${v.full_name}</td>
+                    <td>${v.phone_number}</td>
+                    <td>${v.unit}</td>
+                    <td>${v.resident_name}</td>
+                    <td>${v.entry_time}</td>
+                    <td><button onclick="checkout(${v.visit_id})" class="btn btn-sm btn-info">CHECK-OUT</button></td>
+                </tr>
+            `).join('');
+        }
+
+        document.getElementById('checkinForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const payload = {
+                full_name: document.getElementById('fullName').value,
+                id_number: document.getElementById('idNumber').value,
+                phone_number: document.getElementById('phone').value,
+                vehicle_number: document.getElementById('vehicle').value,
+                resident_id: document.getElementById('residentSelect').value
+            };
+
+            await fetch('/api/visits/checkin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            document.getElementById('checkinForm').reset();
+            loadActiveVisitors();
+        });
+
+        async function checkout(id) {
+            await fetch(`/api/visits/checkout/${id}`, { method: 'POST' });
+            loadActiveVisitors();
+        }
+
+        async function logout() {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/';
+        }
+
+        init();
+    </script>
+</body>
+</html>
