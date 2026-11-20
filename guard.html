@@ -5,6 +5,7 @@
     <title>Guard Dashboard - Visitor Management System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
+        /* Dark theme colors for the page, cards, inputs and tables */
         body { background-color: #121212; color: #e0e0e0; }
         .card { background-color: #1e1e1e; border: 1px solid #333; }
         .form-control, .form-select { background-color: #2b2b2b; color: #fff; border: 1px solid #444; }
@@ -13,6 +14,7 @@
     </style>
 </head>
 <body class="container py-4">
+    <!-- Header: system title, logged-in guard name and logout button -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>APARTMENT VISITOR MANAGEMENT SYSTEM</h2>
         <div>
@@ -70,6 +72,7 @@
     </div>
 
     <script>
+        // Runs when the page loads: fills the resident dropdown and shows current visitors
         async function init() {
             // Load Residents for dropdown
             const res = await fetch('/api/admin/residents');
@@ -79,6 +82,7 @@
             loadActiveVisitors();
         }
 
+        // Gets visitors who are still on site and shows them in the table
         async function loadActiveVisitors() {
             const res = await fetch('/api/visits/active');
             const data = await res.json();
@@ -95,6 +99,7 @@
             `).join('');
         }
 
+        // When the form is submitted: sends the visitor details to the server, clears the form, refreshes the table
         document.getElementById('checkinForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const payload = {
@@ -114,16 +119,19 @@
             loadActiveVisitors();
         });
 
+        // Marks a visitor as left (by visit ID), then refreshes the table
         async function checkout(id) {
             await fetch(`/api/visits/checkout/${id}`, { method: 'POST' });
             loadActiveVisitors();
         }
 
+        // Logs the guard out and sends them back to the home page
         async function logout() {
             await fetch('/api/auth/logout', { method: 'POST' });
             window.location.href = '/';
         }
 
+        // Start the page
         init();
     </script>
 </body>
