@@ -1,4 +1,5 @@
-function verification(req, res, next) {
+// Authentication and authorization middleware for Express routes.
+// Relies on express-session populating req.session.user.function verification(req, res, next) {
   if (!req.session.user) {
     return res.status(401).json({ message: 'Unauthorised. Please login.' });
   }
